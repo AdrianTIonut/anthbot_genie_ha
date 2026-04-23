@@ -12,6 +12,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -19,6 +20,37 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AnthbotGenieDataUpdateCoordinator
+
+
+def _safe_get(data: dict[str, Any], *path: str) -> Any:
+    current: Any = data
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _truthy(value: Any) -> bool:
+    """Generic 'is this ON?' coercion for the mower's int/bool/string flags."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "on", "enabled"}
+    return False
+
+
+def _nonzero(value: Any) -> bool:
+    """For error-style fields where "present" means "not zero"."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value not in ("", "0")
+    return False
 
 
 def _is_connected(data: dict[str, Any]) -> bool:
@@ -78,6 +110,173 @@ BINARY_SENSORS: tuple[AnthbotBinarySensorDescription, ...] = (
         name="Charging",
         device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
         value_fn=_is_charging,
+    ),
+    # --- Error presence -------------------------------------------------
+    AnthbotBinarySensorDescription(
+        key="error_active",
+        translation_key="error_active",
+        name="Error active",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        value_fn=lambda data: _nonzero(data.get("err_code")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="camera_error",
+        translation_key="camera_error",
+        name="Camera error",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _nonzero(_safe_get(data, "camera_error_sta", "value")),
+    ),
+    # --- Connectivity flags ---------------------------------------------
+    AnthbotBinarySensorDescription(
+        key="wifi_connected",
+        translation_key="wifi_connected",
+        name="WiFi connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("wifi_state")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="cellular_connected",
+        translation_key="cellular_connected",
+        name="Cellular connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("4g_state")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="cellular_heartbeat",
+        translation_key="cellular_heartbeat",
+        name="Cellular heartbeat",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("heart_4g")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="bluetooth_active",
+        translation_key="bluetooth_active",
+        name="Bluetooth active",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("bt_state")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="sim_present",
+        translation_key="sim_present",
+        name="SIM inserted",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(_safe_get(data, "sim_status", "status")),
+    ),
+    # --- Map / mowing lifecycle -----------------------------------------
+    AnthbotBinarySensorDescription(
+        key="map_available",
+        translation_key="map_available",
+        name="Map available",
+        value_fn=lambda data: _nonzero(_safe_get(data, "has_map", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="rtk_moving",
+        translation_key="rtk_moving",
+        name="RTK moving",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _nonzero(_safe_get(data, "rtk_move_sta", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="accelerometer_active",
+        translation_key="accelerometer_active",
+        name="Accelerometer active",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(_safe_get(data, "acc_sta", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="mowing_border",
+        translation_key="mowing_border",
+        name="Mowing border",
+        value_fn=lambda data: _nonzero(_safe_get(data, "mow_border", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="mowing_nest",
+        translation_key="mowing_nest",
+        name="Mowing nest",
+        value_fn=lambda data: _nonzero(_safe_get(data, "mow_nest", "value")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="full_yard_mowing",
+        translation_key="full_yard_mowing",
+        name="Full-yard mowing enabled",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("mow_full")),
+    ),
+    # --- State flags mirroring switches (read-only copy) ----------------
+    AnthbotBinarySensorDescription(
+        key="anti_loss_state",
+        translation_key="anti_loss_state",
+        name="Anti-loss state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("anti_loss_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="camera_state",
+        translation_key="camera_state",
+        name="Camera state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("camera_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="edge_cut_state",
+        translation_key="edge_cut_state",
+        name="Edge-cut state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("edge_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="indoor_mode_state",
+        translation_key="indoor_mode_state",
+        name="Indoor mode state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("indoor_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="auto_upgrade_state",
+        translation_key="auto_upgrade_state",
+        name="Auto upgrade state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("auto_upgrade")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="obstacle_avoidance_state",
+        translation_key="obstacle_avoidance_state",
+        name="Obstacle avoidance state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(_safe_get(data, "pobctl", "switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="drc_enabled",
+        translation_key="drc_enabled",
+        name="DRC enabled",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("drc_switch")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="log_upload_enabled",
+        translation_key="log_upload_enabled",
+        name="Log upload enabled",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("log_switch")),
+    ),
+    # --- Admin flags ----------------------------------------------------
+    AnthbotBinarySensorDescription(
+        key="factory_reset_pending",
+        translation_key="factory_reset_pending",
+        name="Factory reset pending",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("factory_reset")),
+    ),
+    AnthbotBinarySensorDescription(
+        key="unbind_pending",
+        translation_key="unbind_pending",
+        name="User unbind pending",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _truthy(data.get("user_unbind")),
     ),
 )
 

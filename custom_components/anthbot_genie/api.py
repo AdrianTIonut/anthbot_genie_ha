@@ -28,6 +28,7 @@ from .const import (
     DEFAULT_IOT_ENDPOINT,
     DEFAULT_IOT_REGION,
     IOT_ENDPOINT_TEMPLATE,
+    MODEL_NAME_BY_CATEGORY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -191,7 +192,13 @@ class AnthbotCloudApiClient:
                 continue
             alias = item.get("alias")
             model_value = item.get("category_id")
-            model = str(model_value) if model_value is not None else ""
+            model_raw = str(model_value) if model_value is not None else ""
+            # Prefer the friendly name from the app-side catalog when available;
+            # otherwise fall back to the raw category_id.
+            model = MODEL_NAME_BY_CATEGORY.get(
+                model_raw,
+                f"Anthbot {model_raw}" if model_raw else "",
+            )
             owner_value = item.get("is_owner")
             is_owner = None
             if isinstance(owner_value, bool):

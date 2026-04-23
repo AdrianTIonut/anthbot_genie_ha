@@ -13,9 +13,106 @@ CONF_PASSWORD = "password"
 CONF_AREA_CODE = "area_code"
 CONF_SCAN_INTERVAL = "scan_interval"
 
-DEFAULT_NAME = "Anthbot Genie 600"
+DEFAULT_NAME = "Anthbot Genie"
 DEFAULT_API_HOST = "api.anthbot.com"
 DEFAULT_AREA_CODE = "32"
+
+# Known category_id values (as reported by /api/v1.8.2/device/bindList).
+# The app uses these as human-readable model names; mapping them keeps the
+# device card in HA clean instead of showing cryptic codes.
+MODEL_NAME_BY_CATEGORY: dict[str, str] = {
+    "Genie 600": "Anthbot Genie 600",
+    "Genie 1000": "Anthbot Genie 1000",
+    "Genie 3000": "Anthbot Genie 3000",
+    "Genie 5000": "Anthbot Genie 5000",
+}
+
+# Mapping of numeric error codes (err_code) to human-readable descriptions.
+# Sourced from the Anthbot mobile app i18n table (error_226_des..error_260_des
+# and friends) plus a few well-known ones; 0 means "no error".
+ERROR_CODE_DESCRIPTIONS: dict[int, str] = {
+    0: "No error",
+    1: "Battery low",
+    2: "Battery critically low",
+    3: "Battery over-temperature",
+    4: "Battery under-temperature",
+    5: "Battery overvoltage",
+    10: "Left wheel stuck",
+    11: "Right wheel stuck",
+    12: "Left wheel motor overload",
+    13: "Right wheel motor overload",
+    14: "Left wheel motor overheat",
+    15: "Right wheel motor overheat",
+    20: "Blade motor stuck",
+    21: "Blade motor overload",
+    22: "Blade motor overheat",
+    30: "Device lifted",
+    31: "Device tilted over limit",
+    32: "Device rollover",
+    33: "Device stuck",
+    40: "Bumper sensor triggered",
+    41: "Collision sensor jammed",
+    42: "ToF sensor fault",
+    43: "Structured-light sensor fault",
+    50: "GPS not ready",
+    51: "RTK not ready",
+    52: "IMU bias error",
+    53: "IMU data error",
+    60: "Boundary wire break",
+    61: "Boundary wire too long",
+    62: "Charging pile communication error",
+    63: "Charging pile overcurrent protection",
+    64: "Charging pile wire error",
+    65: "Recharge failure",
+    66: "Docking station return failure",
+    70: "WiFi config error",
+    71: "WiFi connection error",
+    80: "Firmware download error",
+    81: "Firmware upgrade error",
+    100: "Out of bounds",
+    101: "Unreachable mowing area",
+    102: "Started from forbidden zone",
+    103: "Started from virtual wall",
+    226: "Functional safety error",
+    227: "Ground app error",
+    228: "Ground base error",
+    229: "React error",
+    230: "Battery communication error",
+    231: "Drive motor stall",
+    232: "Drive motor overtemperature",
+    233: "Cutting motor stall protection",
+    234: "Mowing motor undervoltage",
+    235: "Mowing motor stuck",
+    236: "Lift up detected",
+    237: "Lift motor fault",
+}
+
+# Robot maintenance component labels (shadow `robot_maintenance` has these
+# three wear counters expressed as remaining percentage).
+MAINTENANCE_LABELS: dict[str, str] = {
+    "ccp_pecent": "Cutting components life",
+    "cl_pecent": "Cutting line life",
+    "rc_pecent": "Recharge dock brushes life",
+}
+
+# RTK state enum (from `rtk_state` int).
+RTK_STATE_OPTIONS: dict[int, str] = {
+    0: "not_ready",
+    1: "single",
+    2: "differential",
+    3: "fixed",
+    4: "float",
+    5: "dead_reckoning",
+}
+
+# RTK base state enum (from `ctl_rtk_base.rtk_base_state` int).
+RTK_BASE_STATE_OPTIONS: dict[int, str] = {
+    0: "offline",
+    1: "initializing",
+    2: "searching",
+    3: "online",
+    4: "error",
+}
 
 DEFAULT_SCAN_INTERVAL = 30
 DEFAULT_SCAN_INTERVAL_DELTA = timedelta(seconds=DEFAULT_SCAN_INTERVAL)

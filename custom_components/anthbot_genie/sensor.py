@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -13,15 +14,68 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfArea, UnitOfTime
+from homeassistant.const import (
+    EntityCategory,
+    PERCENTAGE,
+    UnitOfArea,
+    UnitOfLength,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    ERROR_CODE_DESCRIPTIONS,
+    RTK_BASE_STATE_OPTIONS,
+    RTK_STATE_OPTIONS,
+)
 from .coordinator import AnthbotGenieDataUpdateCoordinator
 from .zones import active_manual_zone_ids, auto_zones, manual_zones
+
+
+def _safe_get(data: dict[str, Any], *path: str) -> Any:
+    """Walk a nested dict path, returning None if any hop is missing."""
+    current: Any = data
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    """Parse Unix-epoch integers and 'YYYYMMDDHHMMSS' strings to UTC datetimes."""
+    if isinstance(value, (int, float)) and value > 0:
+        try:
+            return datetime.fromtimestamp(int(value), tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str) and len(value) == 14 and value.isdigit():
+        try:
+            return datetime.strptime(value, "%Y%m%d%H%M%S").replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            return None
+    return None
 
 
 def _is_custom_mowing_direction_enabled(data: dict[str, Any]) -> bool:
@@ -152,7 +206,29 @@ class AnthbotSensorDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
 
 
+def _error_description(data: dict[str, Any]) -> str | None:
+    code = _as_int(data.get("err_code"))
+    if code is None:
+        return None
+    return ERROR_CODE_DESCRIPTIONS.get(code, f"Unknown error ({code})")
+
+
+def _rtk_state_label(data: dict[str, Any]) -> str | None:
+    code = _as_int(data.get("rtk_state"))
+    if code is None:
+        return None
+    return RTK_STATE_OPTIONS.get(code, "unknown")
+
+
+def _rtk_base_state_label(data: dict[str, Any]) -> str | None:
+    code = _as_int(_safe_get(data, "ctl_rtk_base", "rtk_base_state"))
+    if code is None:
+        return None
+    return RTK_BASE_STATE_OPTIONS.get(code, "unknown")
+
+
 SENSORS: tuple[AnthbotSensorDescription, ...] = (
+    # --- Primary mower status --------------------------------------------
     AnthbotSensorDescription(
         key="mower_status",
         translation_key="mower_status",
@@ -160,6 +236,15 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=MOWER_STATUS_OPTIONS,
         value_fn=_general_mower_status,
+    ),
+    AnthbotSensorDescription(
+        key="battery_level",
+        translation_key="battery_level",
+        name="Battery level",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get("elec"),
     ),
     AnthbotSensorDescription(
         key="voice_volume",
@@ -176,13 +261,8 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         native_unit_of_measurement="mm",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: (
-            data.get("param_set", {}).get("cutter_height")
-            if isinstance(data.get("param_set"), dict)
-            else (
-                data.get("mow_remote", {}).get("cutter_height")
-                if isinstance(data.get("mow_remote"), dict)
-                else None
-            )
+            _safe_get(data, "param_set", "cutter_height")
+            or _safe_get(data, "mow_remote", "cutter_height")
         ),
     ),
     AnthbotSensorDescription(
@@ -192,11 +272,7 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.SECONDS,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: (
-            data.get("mowing_time_new", {}).get("value")
-            if isinstance(data.get("mowing_time_new"), dict)
-            else None
-        ),
+        value_fn=lambda data: _safe_get(data, "mowing_time_new", "value"),
     ),
     AnthbotSensorDescription(
         key="mowing_area",
@@ -205,11 +281,7 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfArea.SQUARE_METERS,
         device_class=SensorDeviceClass.AREA,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: (
-            data.get("mowing_area_new", {}).get("value")
-            if isinstance(data.get("mowing_area_new"), dict)
-            else None
-        ),
+        value_fn=lambda data: _safe_get(data, "mowing_area_new", "value"),
     ),
     AnthbotSensorDescription(
         key="custom_mowing_direction",
@@ -217,11 +289,7 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         name="Custom mowing direction",
         native_unit_of_measurement="deg",
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: (
-            data.get("param_set", {}).get("mow_head")
-            if isinstance(data.get("param_set"), dict)
-            else None
-        ),
+        value_fn=lambda data: _safe_get(data, "param_set", "mow_head"),
     ),
     AnthbotSensorDescription(
         key="custom_mowing_direction_enabled",
@@ -245,14 +313,284 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         name="Auto zones",
         value_fn=lambda data: len(auto_zones(data)),
     ),
+    # --- Map / area ------------------------------------------------------
     AnthbotSensorDescription(
-        key="battery_level",
-        translation_key="battery_level",
-        name="Battery level",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.BATTERY,
+        key="total_map_area",
+        translation_key="total_map_area",
+        name="Total mapped area",
+        native_unit_of_measurement=UnitOfArea.SQUARE_METERS,
+        device_class=SensorDeviceClass.AREA,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("elec"),
+        value_fn=lambda data: data.get("map_area"),
+    ),
+    AnthbotSensorDescription(
+        key="map_status",
+        translation_key="map_status",
+        name="Map status",
+        value_fn=lambda data: _safe_get(data, "map_sta", "value"),
+    ),
+    # --- Errors / events -------------------------------------------------
+    AnthbotSensorDescription(
+        key="error_code",
+        translation_key="error_code",
+        name="Error code",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _as_int(data.get("err_code")),
+    ),
+    AnthbotSensorDescription(
+        key="error_description",
+        translation_key="error_description",
+        name="Error description",
+        value_fn=_error_description,
+    ),
+    AnthbotSensorDescription(
+        key="event_code",
+        translation_key="event_code",
+        name="Last event code",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _as_int(data.get("event_code")),
+    ),
+    # --- Positioning / RTK ----------------------------------------------
+    AnthbotSensorDescription(
+        key="rtk_state",
+        translation_key="rtk_state",
+        name="RTK fix state",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(dict.fromkeys(list(RTK_STATE_OPTIONS.values()) + ["unknown"])),
+        value_fn=_rtk_state_label,
+    ),
+    AnthbotSensorDescription(
+        key="rtk_base_state",
+        translation_key="rtk_base_state",
+        name="RTK base station state",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(dict.fromkeys(list(RTK_BASE_STATE_OPTIONS.values()) + ["unknown"])),
+        value_fn=_rtk_base_state_label,
+    ),
+    AnthbotSensorDescription(
+        key="gps_latitude",
+        translation_key="gps_latitude",
+        name="GPS latitude",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "anti_loss_pose", "posegps", "lat"),
+    ),
+    AnthbotSensorDescription(
+        key="gps_longitude",
+        translation_key="gps_longitude",
+        name="GPS longitude",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "anti_loss_pose", "posegps", "lon"),
+    ),
+    # --- Maintenance percentages ----------------------------------------
+    AnthbotSensorDescription(
+        key="cutting_component_life",
+        translation_key="cutting_component_life",
+        name="Cutting components life",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "robot_maintenance", "ccp_pecent"),
+    ),
+    AnthbotSensorDescription(
+        key="cutting_line_life",
+        translation_key="cutting_line_life",
+        name="Cutting line life",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "robot_maintenance", "cl_pecent"),
+    ),
+    AnthbotSensorDescription(
+        key="recharge_contact_life",
+        translation_key="recharge_contact_life",
+        name="Recharge contact life",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "robot_maintenance", "rc_pecent"),
+    ),
+    # --- Firmware / versions --------------------------------------------
+    AnthbotSensorDescription(
+        key="firmware_version",
+        translation_key="firmware_version",
+        name="Firmware version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "fw_version", "system_version"),
+    ),
+    AnthbotSensorDescription(
+        key="main_board_version",
+        translation_key="main_board_version",
+        name="Main board version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "fw_version", "main_board"),
+    ),
+    AnthbotSensorDescription(
+        key="extension_board_version",
+        translation_key="extension_board_version",
+        name="Extension board version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "fw_version", "exten_board"),
+    ),
+    AnthbotSensorDescription(
+        key="rtk_base_firmware",
+        translation_key="rtk_base_firmware",
+        name="RTK base firmware",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "fw_version", "rtk_base"),
+    ),
+    AnthbotSensorDescription(
+        key="protocol_version",
+        translation_key="protocol_version",
+        name="Protocol version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("protocol_version"),
+    ),
+    AnthbotSensorDescription(
+        key="minimum_app_version",
+        translation_key="minimum_app_version",
+        name="Minimum app version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("min_app_version"),
+    ),
+    # --- OTA -------------------------------------------------------------
+    AnthbotSensorDescription(
+        key="ota_progress",
+        translation_key="ota_progress",
+        name="OTA progress",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "ota_status", "ota_progress"),
+    ),
+    AnthbotSensorDescription(
+        key="ota_state",
+        translation_key="ota_state",
+        name="OTA state",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "ota_status", "ota_state"),
+    ),
+    AnthbotSensorDescription(
+        key="ota_time_estimate",
+        translation_key="ota_time_estimate",
+        name="OTA time estimate",
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        device_class=SensorDeviceClass.DURATION,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "ota_status", "ota_time_estimate"),
+    ),
+    # --- Network diagnostics --------------------------------------------
+    AnthbotSensorDescription(
+        key="wifi_ssid",
+        translation_key="wifi_ssid",
+        name="WiFi SSID",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("sta_ssid"),
+    ),
+    AnthbotSensorDescription(
+        key="ip_address",
+        translation_key="ip_address",
+        name="IP address",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("sta_ip_addr"),
+    ),
+    AnthbotSensorDescription(
+        key="sim_ccid",
+        translation_key="sim_ccid",
+        name="SIM CCID",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("4g_ccid"),
+    ),
+    # --- Misc diagnostics -----------------------------------------------
+    AnthbotSensorDescription(
+        key="pin_code",
+        translation_key="pin_code",
+        name="Device PIN",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_int(data.get("pin_code")),
+    ),
+    AnthbotSensorDescription(
+        key="voice_language",
+        translation_key="voice_language",
+        name="Voice language",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: (
+            _safe_get(data, "voice_status", "name")
+            or _safe_get(data, "music_cfg", "music_language")
+        ),
+    ),
+    AnthbotSensorDescription(
+        key="obstacle_avoidance_level",
+        translation_key="obstacle_avoidance_level",
+        name="Obstacle avoidance level",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_get(data, "pobctl", "level"),
+    ),
+    AnthbotSensorDescription(
+        key="mow_count",
+        translation_key="mow_count",
+        name="Pass count setting",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "param_set", "mow_count"),
+    ),
+    AnthbotSensorDescription(
+        key="anti_loss_radius",
+        translation_key="anti_loss_radius",
+        name="Anti-loss radius",
+        native_unit_of_measurement=UnitOfLength.METERS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_int(data.get("anti_loss_radius")),
+    ),
+    # --- Timestamps ------------------------------------------------------
+    AnthbotSensorDescription(
+        key="shadow_updated",
+        translation_key="shadow_updated",
+        name="Shadow last updated",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_datetime(data.get("timestamp")),
+    ),
+    AnthbotSensorDescription(
+        key="system_boot_time",
+        translation_key="system_boot_time",
+        name="System boot time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_datetime(data.get("system_boot_time")),
+    ),
+    AnthbotSensorDescription(
+        key="map_last_updated",
+        translation_key="map_last_updated",
+        name="Map last updated",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_datetime(data.get("map_time")),
+    ),
+    AnthbotSensorDescription(
+        key="path_last_updated",
+        translation_key="path_last_updated",
+        name="Path last updated",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_datetime(data.get("path_time")),
+    ),
+    AnthbotSensorDescription(
+        key="area_last_updated",
+        translation_key="area_last_updated",
+        name="Area last updated",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_datetime(data.get("area_time")),
+    ),
+    AnthbotSensorDescription(
+        key="next_appointment",
+        translation_key="next_appointment",
+        name="Next appointment",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _as_datetime(data.get("appointment_time")),
     ),
 )
 
