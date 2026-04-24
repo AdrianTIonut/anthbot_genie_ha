@@ -1,6 +1,7 @@
 # Anthbot Genie Home Assistant Integration — AdrianTIonut fork
 
 ![Anthbot Genie logo](logo.png)
+![GitHub release downloads](https://img.shields.io/github/downloads/AdrianTIonut/anthbot_genie_ha/total)
 
 > **This is a community fork** of
 > [vincentjanv/anthbot_genie_ha](https://github.com/vincentjanv/anthbot_genie_ha).
