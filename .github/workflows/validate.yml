@@ -31,9 +31,18 @@ jobs:
 
       - name: Validate manifest.json schema
         run: |
-          for m in $(find custom_components -name manifest.json); do
-            python3 -c "import json,sys; d=json.load(open('$m'))
-            for k in ('domain','name','version','codeowners','iot_class'):
-                assert k in d, f'$m missing key: {k}'
-            "
-          done
+          python3 - <<'PY'
+          import json, glob, sys
+          required = ("domain", "name", "version", "codeowners", "iot_class")
+          fail = 0
+          for path in glob.glob("custom_components/**/manifest.json", recursive=True):
+              with open(path) as f:
+                  d = json.load(f)
+              missing = [k for k in required if k not in d]
+              if missing:
+                  print(f"::error file={path}::missing keys: {missing}")
+                  fail = 1
+              else:
+                  print(f"OK: {path}")
+          sys.exit(fail)
+          PY
