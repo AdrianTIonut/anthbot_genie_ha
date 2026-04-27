@@ -1,0 +1,39 @@
+name: Validate JSON & manifest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate all .json files parse
+        run: |
+          set -e
+          fail=0
+          while IFS= read -r f; do
+            if ! python3 -c "import json,sys; json.load(open('$f'))" 2>/dev/null; then
+              echo "::error file=$f::JSON parse error"
+              fail=1
+            fi
+          done < <(find . -name "*.json" -not -path "./.git/*")
+          exit $fail
+
+      - name: Validate hacs.json schema
+        run: |
+          test -f hacs.json
+          python3 -c "import json; d=json.load(open('hacs.json')); assert 'name' in d, 'hacs.json missing name'"
+
+      - name: Validate manifest.json schema
+        run: |
+          for m in $(find custom_components -name manifest.json); do
+            python3 -c "import json,sys; d=json.load(open('$m'))
+            for k in ('domain','name','version','codeowners','iot_class'):
+                assert k in d, f'$m missing key: {k}'
+            "
+          done
