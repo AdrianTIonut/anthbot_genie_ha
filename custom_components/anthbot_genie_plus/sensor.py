@@ -543,6 +543,60 @@ SENSORS: tuple[AnthbotSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: _as_int(data.get("anti_loss_radius")),
     ),
+    # --- v1.0.0: Absolute pose ------------------------------------------
+    # `pose` reports x/y in cm and yaw in degrees, separate from the
+    # (lat,lon) GPS reading. Useful for plotting on a 2D map.
+    AnthbotSensorDescription(
+        key="pose_x",
+        translation_key="pose_x",
+        name="Position X",
+        native_unit_of_measurement="cm",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "pose", "x"),
+    ),
+    AnthbotSensorDescription(
+        key="pose_y",
+        translation_key="pose_y",
+        name="Position Y",
+        native_unit_of_measurement="cm",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "pose", "y"),
+    ),
+    AnthbotSensorDescription(
+        key="pose_yaw",
+        translation_key="pose_yaw",
+        name="Heading",
+        native_unit_of_measurement="°",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: _safe_get(data, "pose", "yaw"),
+    ),
+    # --- v1.0.0: Active mowing zone -------------------------------------
+    AnthbotSensorDescription(
+        key="active_zone_id",
+        translation_key="active_zone_id",
+        name="Active zone",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: (
+            _safe_get(data, "active_area", "id")[0]
+            if isinstance(_safe_get(data, "active_area", "id"), list)
+            and _safe_get(data, "active_area", "id")
+            else None
+        ),
+    ),
+    # --- v1.0.0: Forbid (no-go) zones count ------------------------------
+    AnthbotSensorDescription(
+        key="forbid_zones_count",
+        translation_key="forbid_zones_count",
+        name="No-go zones",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: (
+            len(_safe_get(data, "_area_definition", "forbid_areas") or [])
+        ),
+    ),
     # --- Timestamps ------------------------------------------------------
     AnthbotSensorDescription(
         key="shadow_updated",

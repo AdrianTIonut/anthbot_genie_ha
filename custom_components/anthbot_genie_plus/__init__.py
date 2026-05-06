@@ -427,7 +427,6 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             schema=auto_zone_schema,
         )
 
-
 def _async_cleanup_legacy_entities(
     hass: HomeAssistant, entry: ConfigEntry, serial_number: str
 ) -> None:

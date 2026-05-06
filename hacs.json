@@ -1,7 +1,7 @@
 {
-  "name": "Anthbot Genie",
+  "name": "Anthbot Genie Plus",
   "content_in_root": false,
-  "domains": ["anthbot_genie"],
+  "domains": ["anthbot_genie_plus"],
   "homeassistant": "2024.1.0",
   "render_readme": true,
   "iot_class": "cloud_polling"

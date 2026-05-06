@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-DOMAIN = "anthbot_genie"
+DOMAIN = "anthbot_genie_plus"
 
 CONF_API_HOST = "api_host"
 CONF_BEARER_TOKEN = "bearer_token"

@@ -1,11 +1,12 @@
 # Home Assistant Brands Submission
 
-This repository includes prepared brand assets for submission to the Home Assistant Brands repository.
+This repository includes prepared brand assets for submission to the
+Home Assistant Brands repository.
 
 ## Source assets
 
-- `brands/custom_integrations/anthbot_genie/icon.png`
-- `brands/custom_integrations/anthbot_genie/logo.png`
+- `brands/custom_integrations/anthbot_genie_plus/icon.png`
+- `brands/custom_integrations/anthbot_genie_plus/logo.png`
 
 ## Target repository and path
 
@@ -15,10 +16,19 @@ Submit a PR to:
 
 Place files under:
 
-- `custom_integrations/anthbot_genie/icon.png`
-- `custom_integrations/anthbot_genie/logo.png`
+- `custom_integrations/anthbot_genie_plus/icon.png`
+- `custom_integrations/anthbot_genie_plus/logo.png`
+
+After merge, HA will fetch them at:
+
+- `https://brands.home-assistant.io/_/anthbot_genie_plus/icon.png`
+- `https://brands.home-assistant.io/_/anthbot_genie_plus/logo.png`
 
 ## Notes
 
-- The integration domain is `anthbot_genie`.
+- The integration domain is `anthbot_genie_plus`.
 - This integration is unofficial and not affiliated with Anthbot.
+- This is a fork of `vincentjanv/anthbot_genie_ha`. The upstream brand
+  files for `anthbot_genie` already exist in the brands repo and we
+  do not modify them — this submission adds a separate
+  `anthbot_genie_plus` entry so both can coexist.

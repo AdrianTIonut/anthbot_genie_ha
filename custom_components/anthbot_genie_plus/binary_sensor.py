@@ -371,6 +371,12 @@ class AnthbotBinarySensorEntity(
             if isinstance(state.get("voice_status"), dict)
             else None
         )
+        robot_sta = state.get("robot_sta")
+        robot_sta_value = (
+            robot_sta.get("value")
+            if isinstance(robot_sta, dict)
+            else robot_sta
+        )
         return {
             "serial_number": self.coordinator.client.serial_number,
             "cutting_height": cutting_height,
@@ -380,6 +386,7 @@ class AnthbotBinarySensorEntity(
             "custom_mowing_direction_enabled": custom_mowing_direction_enabled,
             "voice_volume": voice_volume,
             "voice_status": voice_status,
+            "robot_sta": robot_sta_value,
             "last_service_command": (
                 service_reported.get("cmd") if service_reported else None
             ),
