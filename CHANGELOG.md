@@ -56,6 +56,22 @@ The two integrations now coexist without conflicts. Procedure:
 5. Once the new integration is happy, you can remove the old one
    from Devices & Services to avoid duplicate polling.
 
+### ⚠️ HACS update from v0.8.x of this fork
+
+If HACS shows the error
+`No manifest.json file found 'custom_components/anthbot_genie/manifest.json'`
+when updating to v1.0.0, it's because HACS cached the old folder path
+(`anthbot_genie`) from your previous install. The folder is now
+`anthbot_genie_plus`. To fix:
+
+1. HACS → **Anthbot Genie** (old entry) → ⋮ → **Remove**.
+2. Restart Home Assistant.
+3. HACS → **Custom repositories** → re-add
+   `https://github.com/AdrianTIonut/anthbot_genie_ha` as **Integration**.
+4. Download v1.0.0, restart HA.
+5. The old failed integration in Devices & Services can be removed.
+6. Add **Anthbot Genie Plus** via *Add Integration* and log in.
+
 ---
 
 ## [0.8.2] - 2026-04-27

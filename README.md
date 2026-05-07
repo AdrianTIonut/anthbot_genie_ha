@@ -196,6 +196,40 @@ If you already have `vincentjanv/anthbot_genie_ha` installed:
 
 ---
 
+## ⚠️ Updating from this fork's v0.8.x to v1.0.0
+
+In v1.0.0 the domain was renamed `anthbot_genie` → `anthbot_genie_plus`,
+so the integration folder also moved from
+`custom_components/anthbot_genie/` to
+`custom_components/anthbot_genie_plus/`.
+
+HACS caches the original folder path per repository, so when it tries to
+download v1.0.0 it may look for the **old** path and fail with:
+
+```
+Downloading AdrianTIonut/anthbot_genie_ha with version v1.0.0 failed with
+(No manifest.json file found 'custom_components/anthbot_genie/manifest.json')
+```
+
+To fix, force HACS to re-read the new folder layout:
+
+1. HACS → **Anthbot Genie** (the old entry) → ⋮ → **Remove**
+2. Restart Home Assistant
+3. HACS → **Custom repositories** → re-add
+   `https://github.com/AdrianTIonut/anthbot_genie_ha` as **Integration**
+4. Open the new entry → **Download** → pick v1.0.0
+5. Restart Home Assistant
+6. Settings → Devices & Services → the old `Anthbot Genie` integration
+   will show **Failed setup** (folder no longer exists) — remove it.
+7. **Add Integration** → search **Anthbot Genie Plus** → log in with the
+   same Anthbot account (no need to re-enter credentials elsewhere).
+
+Your existing dashboards / automations using the old `sensor.anthbot_*`
+entity_ids must be updated to `sensor.anthbot_genie_plus_*` (the device
+slug may be different too — check Developer Tools → States).
+
+---
+
 ## ⚙️ Configuration
 
 You only need:
