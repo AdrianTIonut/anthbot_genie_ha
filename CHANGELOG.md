@@ -5,6 +5,29 @@ All notable changes to this fork are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-05-08
+
+### Fixed
+- **403 Forbidden on shadow GET / command publish.** Anthbot rotated the
+  static AWS IoT keys that the integration had been using, so all polling
+  requests started failing with `403 Forbidden`. The cloud API has always
+  exposed an STS endpoint that returns short-lived credentials per device
+  (`access_key_id` + `secret_access_key` + `session_token`), but the
+  shadow client was ignoring them and using the hardcoded keys. This
+  release switches signing entirely to the dynamic STS credentials and
+  adds the `x-amz-security-token` header on every signed request, with
+  automatic refresh on expiration and on 403 responses.
+
+### Added
+- HACS migration guide for users coming from v0.8.x of this fork (the
+  domain rename caused a "manifest.json not found" error on update).
+
+### Changed
+- README and CHANGELOG note the same migration path so it's discoverable
+  from both the GitHub repo and HACS release notes.
+
+---
+
 ## [1.0.0] - 2026-05-01
 
 First independent release of the fork. Domain renamed to

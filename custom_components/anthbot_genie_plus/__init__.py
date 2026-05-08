@@ -549,6 +549,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             serial_number=device.serial_number,
             region_name=region_name,
             iot_endpoint=iot_endpoint,
+            account_client=account_client,
         )
         _async_cleanup_legacy_entities(hass, entry, device.serial_number)
         coordinator = AnthbotGenieDataUpdateCoordinator(

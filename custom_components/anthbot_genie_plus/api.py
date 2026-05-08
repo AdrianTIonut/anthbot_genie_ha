@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -9,6 +10,7 @@ import hmac
 import json
 import logging
 import re
+import time
 from typing import Any
 import uuid
 from urllib.parse import parse_qs, quote, urlparse
@@ -30,6 +32,9 @@ from .const import (
     IOT_ENDPOINT_TEMPLATE,
     MODEL_NAME_BY_CATEGORY,
 )
+
+# Refresh STS creds this many seconds before declared expiration.
+_CREDENTIALS_REFRESH_BUFFER_SECONDS = 60
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -472,6 +477,7 @@ class AnthbotShadowApiClient:
         serial_number: str,
         region_name: str | None,
         iot_endpoint: str | None,
+        account_client: "AnthbotCloudApiClient | None" = None,
     ) -> None:
         self._session = session
         self._serial_number = serial_number
@@ -479,6 +485,13 @@ class AnthbotShadowApiClient:
             region_name if isinstance(region_name, str) and region_name else None
         )
         self._iot_endpoint = self._normalize_endpoint(iot_endpoint)
+        # account_client is required to fetch fresh STS credentials.
+        # It may be None for legacy callers — those will fall back to the
+        # static AWS keys and skip x-amz-security-token (likely 403 today
+        # since Anthbot rotated the static keys, but kept for safety).
+        self._account_client = account_client
+        self._credentials: AnthbotTemporaryIotCredentials | None = None
+        self._credentials_lock = asyncio.Lock()
         endpoint_region = self._guess_region_from_endpoint(self._iot_endpoint)
         if (
             self._region_name
@@ -492,6 +505,48 @@ class AnthbotShadowApiClient:
                 endpoint_region,
                 self._iot_endpoint,
             )
+
+    def _credentials_are_valid(
+        self, creds: AnthbotTemporaryIotCredentials | None
+    ) -> bool:
+        if creds is None:
+            return False
+        if creds.expiration is None:
+            return True
+        # expiration is unix seconds; allow refresh buffer
+        return creds.expiration - int(time.time()) > _CREDENTIALS_REFRESH_BUFFER_SECONDS
+
+    async def _async_get_credentials(
+        self, *, force_refresh: bool = False
+    ) -> AnthbotTemporaryIotCredentials | None:
+        """Return cached temp credentials or fetch fresh ones from STS."""
+        if self._account_client is None:
+            return None
+        async with self._credentials_lock:
+            if not force_refresh and self._credentials_are_valid(self._credentials):
+                return self._credentials
+            try:
+                creds = await self._account_client.async_get_device_iot_credentials(
+                    self._serial_number
+                )
+            except AnthbotGenieApiError as err:
+                _LOGGER.debug(
+                    "Failed to fetch IoT STS credentials for %s: %s",
+                    self._serial_number,
+                    err,
+                )
+                # If we had stale creds, return them as last-ditch.
+                return self._credentials
+            self._credentials = creds
+            # Reuse the endpoint/region the cloud sent us if available — they
+            # match the policy attached to the temp creds.
+            if creds.endpoint:
+                normalized = self._normalize_endpoint(creds.endpoint)
+                if normalized:
+                    self._iot_endpoint = normalized
+            if creds.region_name:
+                self._region_name = creds.region_name
+            return creds
 
     @staticmethod
     def _normalize_endpoint(iot_endpoint: str | None) -> str:
@@ -539,32 +594,58 @@ class AnthbotShadowApiClient:
         """Build the default Anthbot IoT endpoint host for a region."""
         return IOT_ENDPOINT_TEMPLATE.format(region=region_name)
 
-    def _access_key_id(self) -> str:
+    def _static_access_key_id(self) -> str:
         if self._iot_endpoint == CN_NORTHWEST_IOT_ENDPOINT:
             return AWS_ACCESS_KEY_CN_NORTHWEST
         if self.signing_region.startswith("cn"):
             return AWS_ACCESS_KEY_CN
         return AWS_ACCESS_KEY_DEFAULT
 
-    def _secret_access_key(self) -> str:
+    def _static_secret_access_key(self) -> str:
         if self._iot_endpoint == CN_NORTHWEST_IOT_ENDPOINT:
             return AWS_SECRET_KEY_CN_NORTHWEST
         if self.signing_region.startswith("cn"):
             return AWS_SECRET_KEY_CN
         return AWS_SECRET_KEY_DEFAULT
 
+    def _access_key_id(
+        self, creds: AnthbotTemporaryIotCredentials | None = None
+    ) -> str:
+        if creds is not None and creds.access_key_id:
+            return creds.access_key_id
+        return self._static_access_key_id()
+
+    def _secret_access_key(
+        self, creds: AnthbotTemporaryIotCredentials | None = None
+    ) -> str:
+        if creds is not None and creds.secret_access_key:
+            return creds.secret_access_key
+        return self._static_secret_access_key()
+
     @staticmethod
     def _sign(key: bytes, msg: str) -> bytes:
         return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
-    def _signing_key(self, date_stamp: str) -> bytes:
+    def _signing_key(
+        self,
+        date_stamp: str,
+        creds: AnthbotTemporaryIotCredentials | None = None,
+    ) -> bytes:
         service = "iotdata"
-        k_date = self._sign(("AWS4" + self._secret_access_key()).encode("utf-8"), date_stamp)
+        k_date = self._sign(
+            ("AWS4" + self._secret_access_key(creds)).encode("utf-8"), date_stamp
+        )
         k_region = self._sign(k_date, self.signing_region)
         k_service = self._sign(k_region, service)
         return self._sign(k_service, "aws4_request")
 
-    def _build_authorization(self, amz_date: str, date_stamp: str, canonical_request: str) -> str:
+    def _build_authorization(
+        self,
+        amz_date: str,
+        date_stamp: str,
+        canonical_request: str,
+        creds: AnthbotTemporaryIotCredentials | None = None,
+    ) -> str:
         algorithm = "AWS4-HMAC-SHA256"
         signed_headers = self._signed_headers_from_request(canonical_request)
         credential_scope = (
@@ -577,12 +658,12 @@ class AnthbotShadowApiClient:
             f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
         )
         signature = hmac.new(
-            self._signing_key(date_stamp),
+            self._signing_key(date_stamp, creds),
             string_to_sign.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
         return (
-            f"{algorithm} Credential={self._access_key_id()}/{credential_scope}, "
+            f"{algorithm} Credential={self._access_key_id(creds)}/{credential_scope}, "
             f"SignedHeaders={signed_headers}, Signature={signature}"
         )
 
@@ -633,6 +714,39 @@ class AnthbotShadowApiClient:
         self, shadow_name: str
     ) -> dict[str, Any]:
         """Fetch a named device shadow and return state.reported."""
+        # Try with current creds; on 403 force refresh and retry once.
+        for attempt in range(2):
+            creds = await self._async_get_credentials(force_refresh=attempt > 0)
+            status, body, payload = await self._async_get_named_shadow_attempt(
+                shadow_name, creds
+            )
+            if status == 200:
+                if not isinstance(payload, dict):
+                    raise AnthbotGenieApiError("Invalid response payload type")
+                state = payload.get("state")
+                reported = (
+                    state.get("reported") if isinstance(state, dict) else None
+                )
+                if not isinstance(reported, dict):
+                    raise AnthbotGenieApiError("Missing state.reported in response")
+                return reported
+            if status == 403 and attempt == 0:
+                _LOGGER.debug(
+                    "Anthbot shadow GET 403 for %s; refreshing STS creds and retrying",
+                    self._serial_number,
+                )
+                continue
+            raise AnthbotGenieApiError(
+                f"Shadow request failed ({status}): {body[:300]}"
+            )
+        raise AnthbotGenieApiError("Shadow request failed: exhausted retries")
+
+    async def _async_get_named_shadow_attempt(
+        self,
+        shadow_name: str,
+        creds: AnthbotTemporaryIotCredentials | None,
+    ) -> tuple[int, str, dict[str, Any] | None]:
+        """Single signed GET attempt. Returns (status, body_text, payload_dict)."""
         request_uri = f"/things/{quote(self._serial_number, safe='-_.~')}/shadow"
         canonical_uri = self._canonical_uri_for_sigv4(request_uri)
         canonical_query = f"name={quote(shadow_name, safe='-_.~')}"
@@ -647,6 +761,10 @@ class AnthbotShadowApiClient:
             "x-amz-content-sha256": payload_hash,
             "x-amz-date": amz_date,
         }
+        # If we have a session_token (temp STS creds), it MUST be signed and
+        # sent as x-amz-security-token; otherwise AWS returns 403.
+        if creds is not None and creds.session_token:
+            signed_header_values["x-amz-security-token"] = creds.session_token
         canonical_headers, signed_headers = self._canonical_headers(signed_header_values)
         canonical_request = (
             "GET\n"
@@ -660,6 +778,7 @@ class AnthbotShadowApiClient:
             amz_date=amz_date,
             date_stamp=date_stamp,
             canonical_request=canonical_request,
+            creds=creds,
         )
 
         url = f"https://{self._iot_endpoint}{request_uri}?{canonical_query}"
@@ -671,29 +790,24 @@ class AnthbotShadowApiClient:
             "Authorization": authorization,
             "User-Agent": "LdMower/1581 CFNetwork/3860.400.51 Darwin/25.3.0",
         }
+        if creds is not None and creds.session_token:
+            headers["x-amz-security-token"] = creds.session_token
 
         try:
             async with self._session.get(url, headers=headers, timeout=15) as response:
-                if response.status != 200:
-                    body = await response.text()
-                    raise AnthbotGenieApiError(
-                        f"Shadow request failed ({response.status}): {body[:300]}"
-                    )
-                payload = await response.json(content_type=None)
+                body = await response.text()
+                payload: dict[str, Any] | None = None
+                try:
+                    parsed = json.loads(body)
+                    if isinstance(parsed, dict):
+                        payload = parsed
+                except json.JSONDecodeError:
+                    payload = None
+                return response.status, body, payload
         except ClientError as err:
             raise AnthbotGenieApiError(f"Network error: {err}") from err
         except TimeoutError as err:
             raise AnthbotGenieApiError("Request timed out") from err
-
-        if not isinstance(payload, dict):
-            raise AnthbotGenieApiError("Invalid response payload type")
-
-        state = payload.get("state")
-        reported = state.get("reported") if isinstance(state, dict) else None
-        if not isinstance(reported, dict):
-            raise AnthbotGenieApiError("Missing state.reported in response")
-
-        return reported
 
     async def async_get_shadow_reported_state(self) -> dict[str, Any]:
         """Fetch property shadow and return state.reported."""
@@ -712,8 +826,11 @@ class AnthbotShadowApiClient:
         include_sdk_headers: bool,
         canonical_uri_override: str | None = None,
         sign_content_length: bool = True,
+        creds: AnthbotTemporaryIotCredentials | None = None,
     ) -> tuple[int, str, dict[str, Any] | None, dict[str, str]]:
         """Execute a signed IoTData POST request."""
+        if creds is None:
+            creds = await self._async_get_credentials()
         payload_hash = hashlib.sha256(payload_bytes).hexdigest()
 
         now = datetime.now(timezone.utc)
@@ -752,6 +869,11 @@ class AnthbotShadowApiClient:
         else:
             headers["User-Agent"] = "LdMower/1581 CFNetwork/3860.400.51 Darwin/25.3.0"
 
+        # Add x-amz-security-token when using STS temp creds.
+        if creds is not None and creds.session_token:
+            signed_header_values["x-amz-security-token"] = creds.session_token
+            headers["x-amz-security-token"] = creds.session_token
+
         canonical_headers, signed_headers = self._canonical_headers(signed_header_values)
         canonical_uri = (
             canonical_uri_override
@@ -770,6 +892,7 @@ class AnthbotShadowApiClient:
             amz_date=amz_date,
             date_stamp=date_stamp,
             canonical_request=canonical_request,
+            creds=creds,
         )
 
         url = f"https://{self._iot_endpoint}{request_uri}"
@@ -811,28 +934,20 @@ class AnthbotShadowApiClient:
         request_uri_encoded = "/topics/" + quote(topic, safe="-_.~")
         request_uri_raw = f"/topics/{topic}"
 
-        # Different AWS clients canonicalize the URI slightly differently.
-        # Try the app-observed mode first, then fall back to alternatives.
         attempts = (
-            # 1) SDK headers + encoded URI + app-style canonical URI (trace match)
             (request_uri_encoded, True, None, True),
-            # 2) SDK headers + encoded URI + raw canonical URI
             (request_uri_encoded, True, request_uri_encoded, True),
-            # 3) SDK headers + encoded URI + app-style canonical URI, no signed content-length
             (request_uri_encoded, True, None, False),
-            # 4) LdMower headers + encoded URI + app-style canonical URI
             (request_uri_encoded, False, None, True),
-            # 5) Raw topic path, SDK headers, app-style canonical URI
             (request_uri_raw, True, None, True),
-            # 6) Raw topic path, SDK headers, raw canonical URI
             (request_uri_raw, True, request_uri_raw, True),
-            # 7) Raw topic path, LdMower headers, app-style canonical URI
             (request_uri_raw, False, None, True),
         )
 
         last_status = 0
         last_body = ""
         last_headers: dict[str, str] = {}
+        creds_refreshed = False
         for attempt_index, (
             request_uri,
             include_sdk_headers,
@@ -847,18 +962,30 @@ class AnthbotShadowApiClient:
                 canonical_uri_override=canonical_uri_override,
                 sign_content_length=sign_content_length,
             )
+            # On 403 with temp creds, refresh STS once and retry the same attempt.
+            if (
+                status == 403
+                and not creds_refreshed
+                and self._account_client is not None
+            ):
+                creds_refreshed = True
+                await self._async_get_credentials(force_refresh=True)
+                status, body_text, payload, response_headers = (
+                    await self._async_signed_post(
+                        request_uri=request_uri,
+                        canonical_query="",
+                        payload_bytes=payload_bytes,
+                        include_sdk_headers=include_sdk_headers,
+                        canonical_uri_override=canonical_uri_override,
+                        sign_content_length=sign_content_length,
+                    )
+                )
             if status == 200 and isinstance(payload, dict):
                 if attempt_index > 0:
                     _LOGGER.debug(
-                        "Anthbot command publish recovered after fallback: cmd=%s sn=%s endpoint=%s region=%s uri=%s sdk_headers=%s canonical_override=%s sign_content_length=%s",
+                        "Anthbot command publish recovered after fallback: cmd=%s sn=%s",
                         cmd,
                         self._serial_number,
-                        self._iot_endpoint,
-                        self.signing_region,
-                        request_uri,
-                        include_sdk_headers,
-                        canonical_uri_override is not None,
-                        sign_content_length,
                     )
                 return
             last_status = status
@@ -867,13 +994,10 @@ class AnthbotShadowApiClient:
             if status != 403:
                 break
             _LOGGER.debug(
-                "Anthbot command publish attempt failed (403): cmd=%s sn=%s uri=%s sdk_headers=%s canonical_override=%s sign_content_length=%s errortype=%s requestid=%s",
+                "Anthbot command publish attempt failed (403): cmd=%s sn=%s uri=%s errortype=%s requestid=%s",
                 cmd,
                 self._serial_number,
                 request_uri,
-                include_sdk_headers,
-                canonical_uri_override is not None,
-                sign_content_length,
                 response_headers.get("x-amzn-errortype", ""),
                 response_headers.get("x-amzn-requestid", "")
                 or response_headers.get("x-amzn-request-id", ""),
@@ -885,7 +1009,3 @@ class AnthbotShadowApiClient:
             f"requestid '{last_headers.get('x-amzn-requestid', '') or last_headers.get('x-amzn-request-id', '')}'): "
             f"{last_body[:300]}"
         )
-
-    async def async_request_all_properties(self) -> None:
-        """Request an updated property snapshot from the mower."""
-        await self.async_publish_service_command(cmd="get_all_props", data=1)
