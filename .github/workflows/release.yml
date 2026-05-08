@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog section for this tag
+        id: changelog
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          # Pull the section between "## [<tag>]" and the next "## [" header.
+          awk -v tag="$tag" '
+            $0 ~ "^## \\[" tag "\\]" {found=1; next}
+            found && $0 ~ "^## \\[" {found=0}
+            found {print}
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "Release of v$tag" > release_notes.md
+          fi
+          echo "Release notes:"
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
