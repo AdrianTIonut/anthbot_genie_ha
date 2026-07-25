@@ -5,6 +5,30 @@ All notable changes to this fork are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-07-25
+
+### Changed
+- **Rate-limit handling redesigned with exponential backoff.** v1.0.2
+  reduced request rate but still hit 429s for some accounts because the
+  Anthbot cloud keeps the throttle active well past the 5-minute grace
+  we tolerated. This release adds real backoff:
+  - After a 429, the coordinator skips the next N polls before retrying,
+    with N doubling per consecutive 429 (1, 2, 4, capped at 8 polls).
+  - Grace tolerance raised from 5 to 20 rate-limit hits before entities
+    go unavailable.
+  - Cached data is served throughout the backoff window so entities
+    stay on their last known state.
+- **Default polling interval raised from 60s to 120s.** Existing users
+  keep their configured value. New installs get the more conservative
+  default. Users still seeing 429s should manually raise the interval
+  further (integration Options → Polling interval → 180s or 300s).
+
+### Fixed
+- Info-level log message when the cloud recovers after a rate-limit
+  episode so it's easy to see backoff worked from the log alone.
+
+---
+
 ## [1.0.3] - 2026-07-25
 
 ### Added
