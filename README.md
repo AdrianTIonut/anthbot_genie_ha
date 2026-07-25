@@ -3,6 +3,10 @@
 [![License: MIT](https://img.shields.io/github/license/AdrianTIonut/anthbot_genie_ha?color=blue)](LICENSE)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/AdrianTIonut/anthbot_genie_ha?label=latest%20release)](https://github.com/AdrianTIonut/anthbot_genie_ha/releases/latest)
 [![GitHub release downloads](https://img.shields.io/github/downloads/AdrianTIonut/anthbot_genie_ha/total?label=downloads)](https://github.com/AdrianTIonut/anthbot_genie_ha/releases)
+[![GitHub stars](https://img.shields.io/github/stars/AdrianTIonut/anthbot_genie_ha?label=stars&color=yellow)](https://github.com/AdrianTIonut/anthbot_genie_ha/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/AdrianTIonut/anthbot_genie_ha?label=forks&color=orange)](https://github.com/AdrianTIonut/anthbot_genie_ha/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/AdrianTIonut/anthbot_genie_ha?label=open%20issues)](https://github.com/AdrianTIonut/anthbot_genie_ha/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/AdrianTIonut/anthbot_genie_ha?label=open%20PRs)](https://github.com/AdrianTIonut/anthbot_genie_ha/pulls)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 ![Anthbot Genie logo](logo.png)
