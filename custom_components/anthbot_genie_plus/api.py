@@ -1009,3 +1009,7 @@ class AnthbotShadowApiClient:
             f"requestid '{last_headers.get('x-amzn-requestid', '') or last_headers.get('x-amzn-request-id', '')}'): "
             f"{last_body[:300]}"
         )
+
+    async def async_request_all_properties(self) -> None:
+        """Request an updated property snapshot from the mower."""
+        await self.async_publish_service_command(cmd="get_all_props", data=1)

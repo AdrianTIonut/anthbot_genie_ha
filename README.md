@@ -42,12 +42,10 @@ Compared to upstream `vincentjanv/anthbot_genie_ha v0.8.0`:
 - **Per-mower entity prefix** so multiple mowers in one account stay
   cleanly separated
 
-> **GPS location — WIP**: `device_tracker.*_location` exists but
-> Anthbot's recent firmware/cloud combination no longer publishes
-> live GPS coords in the property shadow (`posegps` reads `0,0` even
-> while mowing). Investigation in progress; the entity will populate
-> once the data path is confirmed. Use `pose_x` / `pose_y` for now —
-> they update correctly via RTK.
+> **GPS location — working (since v1.0.2)**: `device_tracker.*_location`
+> now populates with live GPS coordinates while the mower is active. The
+> `pose_x` / `pose_y` sensors remain available for absolute cartesian
+> position on the map (updated via RTK).
 
 ---
 

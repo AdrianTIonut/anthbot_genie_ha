@@ -210,6 +210,9 @@ class AnthbotZoneButtonEntity(
 
     async def async_press(self) -> None:
         """Start mowing the selected zone."""
+        await self.coordinator.client.async_publish_service_command(
+            cmd="app_state", data=1
+        )
         if self._zone_kind == "manual":
             await self.coordinator.client.async_publish_service_command(
                 cmd="custom_area_mow_start",

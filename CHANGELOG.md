@@ -5,6 +5,37 @@ All notable changes to this fork are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-07-25
+
+### Fixed
+- **`Shadow request failed (429): TOO_MANY_REQUESTS`.** With the previous
+  30-second polling interval, each cycle made 2 shadow requests
+  (property + service) plus an occasional area-definition request. That
+  translated to ~240 requests/hour, well above the Anthbot cloud rate
+  limit for an idle mower. When the mower sat on the dock with no task,
+  the rate limit kicked in and all entities went unavailable within a
+  few minutes.
+- **GPS coordinates now work.** `device_tracker.*_location` populates
+  with live GPS while the mower is active. Previously the property
+  shadow's `posegps` field reported `0,0` because the app opened a
+  separate stream for GPS data — this release reads that stream
+  correctly so the tracker updates in real time. `pose_x` / `pose_y`
+  (RTK-based cartesian position) continue to work as before.
+
+### Changed
+- **Default polling interval bumped from 30s to 60s.** Existing installs
+  keep their configured interval; only fresh setups use the new default.
+- **Service shadow now polled every 5th cycle** instead of every cycle.
+  Voice volume and similar settings still update within ~5 minutes but
+  we cut request rate roughly in half. Cached last-known state is served
+  between polls so no entity flips unavailable.
+- **Coordinator tolerates up to 5 consecutive 429 responses** while
+  keeping the previously fetched data visible to users. Only after 5
+  straight rate-limit hits do entities go unavailable. First occurrence
+  logs a warning; persistent failures escalate to error.
+
+---
+
 ## [1.0.1] - 2026-05-08
 
 ### Fixed

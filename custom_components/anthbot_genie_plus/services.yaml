@@ -49,21 +49,16 @@ set_mow_height:
   fields:
     mow_height:
       name: Mow height
-      description: Cutting height in millimeters.
+      description: Cutting height in millimeters (30-70, step 5).
       required: true
       example: 50
       selector:
-        select:
-          options:
-            - 30
-            - 35
-            - 40
-            - 45
-            - 50
-            - 55
-            - 60
-            - 65
-            - 70
+        number:
+          min: 30
+          max: 70
+          step: 5
+          unit_of_measurement: mm
+          mode: slider
     serial_number:
       name: Serial number
       description: Optional mower serial number or list of serial numbers.

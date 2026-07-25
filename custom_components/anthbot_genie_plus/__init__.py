@@ -351,6 +351,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                     f"No matching zones found for mower {coordinator.client.serial_number}"
                 )
             await coordinator.client.async_publish_service_command(
+                cmd="app_state", data=1
+            )
+            await coordinator.client.async_publish_service_command(
                 cmd="custom_area_mow_start",
                 data={"id": zone_ids},
             )
@@ -367,6 +370,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 raise AnthbotGenieApiError(
                     f"No matching auto-zones found for mower {coordinator.client.serial_number}"
                 )
+            await coordinator.client.async_publish_service_command(
+                cmd="app_state", data=1
+            )
             await coordinator.client.async_publish_service_command(
                 cmd="region_mow_start",
                 data={"points": points},
