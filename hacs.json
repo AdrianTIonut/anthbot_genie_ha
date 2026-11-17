@@ -3,6 +3,8 @@
   "content_in_root": false,
   "domains": ["anthbot_genie_plus"],
   "homeassistant": "2024.1.0",
+  "zip_release": true,
+  "filename": "anthbot_genie_plus.zip",
   "render_readme": true,
   "iot_class": "cloud_polling"
 }
