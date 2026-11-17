@@ -1,11 +1,13 @@
 {
   "domain": "anthbot_genie_plus",
   "name": "Anthbot Genie Plus",
-  "codeowners": ["@AdrianTIonut"],
+  "codeowners": [
+    "@AdrianTIonut"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/AdrianTIonut/anthbot_genie_ha",
-  "issue_tracker": "https://github.com/AdrianTIonut/anthbot_genie_ha/issues",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/AdrianTIonut/anthbot_genie_ha/issues",
   "requirements": [],
   "version": "1.0.5"
 }
