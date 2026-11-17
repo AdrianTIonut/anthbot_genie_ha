@@ -5,6 +5,11 @@ All notable changes to this fork are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-11-18
+
+### Changed
+- Registering with HACS / Marketplace: the HACS Action and hassfest validations are now part of the repo and pass, and this release follows them, as the review requires. No code changes; you do not need to do anything.
+
 ## [1.0.5] - 2026-11-17
 
 ### Changed
